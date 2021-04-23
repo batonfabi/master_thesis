@@ -1,3 +1,34 @@
+"""
+This methods and classes are based on https://github.com/NVIDIA/tacotron2/blob/master/stft.py 
+and are used to transofm the audio samples to mel spectograms for the pretrained vocoder
+
+BSD 3-Clause License
+Copyright (c) 2017, Prem Seetharaman
+All rights reserved.
+* Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+* Redistributions of source code must retain the above copyright notice,
+  this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from this
+  software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+"""
+
 import numpy as np
 from librosa.filters import mel as librosa_mel_fn
 import torch
@@ -42,8 +73,6 @@ class CalcMel():
         mel_output: torch.FloatTensor of shape (B, n_mel_channels, T)
         """
         y = torch.tensor(y)
-        #assert(torch.min(y.data) >= -1)
-        #assert(torch.max(y.data) <= 1)
         magnitudes, phases = self.stft_fn.transform(y)
         magnitudes = magnitudes.data
         mel_output = torch.matmul(self.mel_basis, magnitudes)
@@ -52,7 +81,6 @@ class CalcMel():
             for i in range(len(mel_output)):
                 mel_output[i] = self.scaler.transform(mel_output[i])
         mel_output = np.reshape(mel_output, self.output_format)
-        #mel_output = torch.tensor(mel_output.squeeze()).unsqueeze(2).numpy()
         return mel_output
 
 class STFT():
@@ -83,10 +111,6 @@ class STFT():
             # window the bases
             forward_basis *= fft_window
             inverse_basis *= fft_window
-
-            
-        #self.register_buffer('forward_basis', forward_basis.float())
-        #self.register_buffer('inverse_basis', inverse_basis.float())
         
         self.forward_basis = forward_basis.float()
         self.inverse_basis = inverse_basis.float()

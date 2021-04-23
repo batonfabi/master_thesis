@@ -1,3 +1,27 @@
+""" 
+inspired by  https://github.com/aladdinpersson/Machine-Learning-Collection/blob/master/ML/Pytorch/GANs/4.%20WGAN-GP/train.py
+MIT License
+
+Copyright (c) 2020 Aladdin Persson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE. """
+
 import random
 import os
 import torch
@@ -11,6 +35,10 @@ from torch.utils.tensorboard import SummaryWriter
 from timeit import default_timer as timer
 
 class WGAN_GP_training():
+    """
+    Implementation of wgan-gp training
+    """
+
     # params {critic_iterations:5, latent_space_dim:100, lambda_gp: 2e-4, experiment_folder: 'exp1', log_iterations:100, calc_fid:true, evaluation_samples: 1000, device:'cuda'}
     def __init__(self, generator, critic, train_generator, opt_gen, opt_critic, params):
         self.gen = generator.to(params["device"])
@@ -62,24 +90,10 @@ class WGAN_GP_training():
                 self._sample_images(batch_data)
                 if batch_idx % (self.log_iterations * 3) == 0 and batch_idx > 0:
                     torch.save(self.gen, self.save_dir + "gen" + str(self.steps) + ".torch")
-                #torch.save(self.critic, self.save_dir + "crit" + str(self.steps) + ".torch")
+                torch.save(self.critic, self.save_dir + "crit" + str(self.steps) + ".torch")
                 if self.calc_fid:
-                    #np_r = batch_data.cpu().numpy()
-                    #real_fid = torch.Tensor(np.concatenate((np_r,np_r,np_r), axis=1)).to(self.device)
-
-                    #np_f = last_fake_batch.detach().cpu().numpy()
-                    #fake_fid = torch.Tensor(np.concatenate((np_f,np_f,np_f), axis=1)).to(self.device)
-
-                    #fid_score = self.fid_calculator.calculate_fretchet(real_fid, fake_fid)
-                    #euc_score = self._calc_euclidean(np_f)
-                    
-                    
                     fid_score = self._avg_fid_generator(self.gen, self.train_generator, self.evaluation_samples)
                     euc_score = self._avg_euc_generator(self.gen, 1000)
-                    #print(euc_score)
-
-
-                    
                     self.writer_fid.add_scalars("fid", {"fid_gan": fid_score, "ground_truth": self.fid_truth}, self.steps)   
                     self.writer_euc.add_scalars("euc", {"euc_gan": euc_score, "ground_truth": self.euc_truth}, self.steps)   
                     self._log_progress(batch_idx, loss_gen, loss_critic, fid_score, self.fid_truth, euc_score, self.euc_truth)
@@ -94,7 +108,6 @@ class WGAN_GP_training():
         torch.save(self.critic, self.save_dir + "crit_epoch" + str(self.epochs)+ ".torch")
 
     def _avg_fid_generator(self, gan_generator, data_generator, samples):
-#        start = timer()
         gan_generator.eval()
         calc_samps = samples
         with torch.no_grad():
@@ -114,8 +127,6 @@ class WGAN_GP_training():
                     calc_samps = calc_samps - 1
                     
         gan_generator.train()
-#        end = timer()
-#        print(f'time for _avg_fid_generator {end - start}')
         return sum/calc_samps
 
     def _avg_fid_dataset(self, data_generator, samples):
@@ -139,7 +150,6 @@ class WGAN_GP_training():
                         break
                     
         end = timer()
-#        print(f'time for avg_fid_dataset {end - start}')
         return sum/samples
 
     def _avg_euc_dataset(self, data_generator, epochs, samples):
@@ -157,20 +167,15 @@ class WGAN_GP_training():
             t = []
                     
         end = timer()
-#        print(f'time for _avg_euc_dataset {end - start}')
         return sum/epochs
 
     def _avg_euc_generator(self, gan_generator, samples):
-#        start = timer()
         gan_generator.eval()
         with torch.no_grad():
             random_vecors = torch.randn(samples, self.latent_space_dim, 1, 1).to(self.device)
-            print("shape" , np.shape(random_vecors))
             batch = gan_generator(random_vecors).cpu().numpy()
         gan_generator.train()           
         euc = self._calc_euclidean(batch)
-#        end = timer()
-#        print(f'time for _avg_euc_generator {end - start}')
         return euc
 
     def _calc_euclidean(self, batch):
@@ -196,7 +201,6 @@ class WGAN_GP_training():
             self.opt_critic.step()
 
         self.writer_gp.add_scalar("gp", gp.cpu().detach().numpy(), self.steps)   
-        # Train Generator: max E[critic(gen_fake)] <-> min -E[critic(gen_fake)]
         gen_fake = self.critic(fake).reshape(-1)
         loss_gen = -torch.mean(gen_fake)
         self.gen.zero_grad()
@@ -209,7 +213,6 @@ class WGAN_GP_training():
     def _sample_images(self, real_data):
         with torch.no_grad():
             fake = self.gen(self.fixed_noise)
-            # take out (up to) 32 examples
             img_grid_real = torchvision.utils.make_grid(real_data[:32], normalize=True)
             img_grid_fake = torchvision.utils.make_grid(fake[:32], normalize=True)
 
@@ -219,7 +222,6 @@ class WGAN_GP_training():
         self.logged_steps = self.logged_steps + 1
     
     def _log_progress(self, batch_idx, loss_gen, loss_critic, fid=-1, fid_truth =-1, euc=-1, euc_truth=-1):
-        # Print losses occasionally and print to tensorboard
         print(
             f"Epoch [{self.epochs}] Batch {batch_idx}/{self.epoch_len} \
               Loss D: {loss_critic:.4f}, loss G: {loss_gen:.4f}, euc: {euc:.4f}, euc_truth: {euc_truth:.4f}, fid: {fid:.4f}, fid_truth: {fid_truth:.4f}"

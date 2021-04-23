@@ -8,54 +8,93 @@ import librosa
 from torch.utils.data import Dataset
 
 class BirdDataset(Dataset):
-    """Face Landmarks dataset."""
+    """
+    Implements torch.utils.data.Dataset  to provide sliced audio data in a given format
+
+    ...
+
+    Methods
+    -------
+    set_function(function)
+        sets function which is used to convert the slices of audio data into a given type
+
+    get_classes()
+        returns known training classes
+    
+    shuffle_dataset()
+        schuffles the dataset
+    """
+
     __white_list_formats = {'flac'}
 
-    def __init__(self, data_list, classes, batch_size, dim, samplerate, frames, channels, funct, allow_shuffle=True):
-        'Initialization'
-        self.data_list = data_list
-        self.classes = classes
-        self.batch_size = batch_size
-        self.frames = frames
-        self.samplerate = samplerate
-        self.funct = funct
-        self.dim = dim
-        self.channels = channels
-        self.allow_shuffle = allow_shuffle
+    def __init__(self, data, classes, batch_size, dim, samplerate, slice_length, channels, funct, allow_shuffle=True):
+        """
+            Parameters
+            -----------
+
+            data
+                list of trainingdata tuples in the format ['path to file', start_pos_for_window , class_idx]
+            classes: 
+                list of classes
+            batch_size: 
+            dim: 
+                dimension to reshape outputdata
+            samplerate: 
+                samplerate of audiofiles
+            slice_length:
+                length of slices for audiosamples in seconds
+            channels: 
+                num of channels of outputdata 
+            funct:
+                function to transform output data, for example to transform the data to mel spectograms 
+            allow_shuffle (bool, optional):
+                is shuffeling allowed 
+        """
+        self._data = data
+        self._classes = classes
+        self._batch_size = batch_size
+        self._slice_length = slice_length
+        self._samplerate = samplerate
+        self._funct = funct
+        self._dim = dim
+        self._channels = channels
+        self._allow_shuffle = allow_shuffle
         self.shuffle_dataset()
         
     def set_funct(self, funct):
-        self.funct = funct
+        self._funct = funct
         
     def get_classes(self):
-        return self.classes
+        return self._classes
 
     def shuffle_dataset(self):
-        if self.allow_shuffle:
-            np.random.shuffle(self.data_list)
+        if self._allow_shuffle:
+            np.random.shuffle(self._data)
         
     def __len__(self):
-        'Denotes the number of batches per epoch'
-        return int(np.floor(len(self.data_list) / self.batch_size))
+        """
+        Denotes the number of batches per epoch
+        """
+        return int(np.floor(len(self._data) / self._batch_size))
 
     def __getitem__(self, index):
-        'Generate one batch of data'
-        # Generate indexes of the batch
+        """
+        Generate one batch of data
+        """
+
         if index < self.__len__():
-            batch = self.data_list[index * self.batch_size:(index+1)*self.batch_size]
-
-            # Find list of IDs
-
+            batch = self._data[index * self._batch_size:(index+1)*self._batch_size]
             tempy = [e[2] for e in batch]
             tempX = [[e[0], e[1]] for e in batch]
 
-            # Generate data
             x_ret = self.__data_generation(tempX)
             y_ret = tempy
             x_ret = torch.from_numpy(x_ret)
+            
             # todo: 
-            # you have to make y_ret to kategorical i guess
-            # y_ret = torch.FloatTensor(y_ret)
+            # you have to make y_ret to kategorical i guess if you want to use y as label
+            # for gans its not needed
+
             y_ret = torch.LongTensor(y_ret)
             return x_ret, y_ret
         else:
@@ -63,26 +102,22 @@ class BirdDataset(Dataset):
             raise IndexError("that's enough!")
 
     def __data_generation(self, x_data):
-        'Generates data containing batch_size samples'
-
-        # Generate data
+        """
+        Generates data containing batch_size samples
+        """
         wav_batch = []
         for idx, element in enumerate(x_data):
-            # Store sample
             file_path = element[0]
             sample_idx = element[1]
-
-            #wav_array, _ = soundfile.read(file_path, int(self.frames*self.samplerate), int(sample_idx), fill_value=0)
-            
-            wav_array,_ = librosa.load(file_path, sr=self.samplerate, offset=int(sample_idx), duration=self.frames)
-            if len(wav_array) < int(self.samplerate * self.frames):
-                pad = int(self.samplerate * self.frames) - len(wav_array)
+            wav_array,_ = librosa.load(file_path, sr=self._samplerate, offset=int(sample_idx), duration=self._slice_length)
+            if len(wav_array) < int(self._samplerate * self._slice_length):
+                pad = int(self._samplerate * self._slice_length) - len(wav_array)
                 pad = np.zeros(pad,dtype=np.float32)
                 wav_array = np.append(wav_array,pad)
             wav_batch.append(wav_array)
-        x_tmp = self.funct(wav_batch)
-        if self.channels != -1:
-            x_tmp = np.reshape(x_tmp, (*self.dim, self.channels))
+        x_tmp = self._funct(wav_batch)
+        if self._channels != -1:
+            x_tmp = np.reshape(x_tmp, (*self._dim, self._channels))
         x_ret = x_tmp
         return x_ret
 
@@ -91,23 +126,65 @@ class BirdDataset(Dataset):
         return "not implemented"
 
 class CustomDataGenerator():
+    """
+    creates training and test dataset from the class BirdDataset 
+    ...
+
+    Methods
+    -------
+    get_current_dimension()
+        retunrs shape of output data
+
+    get_generators()
+        retunrs traindata_generator and testdata_generator 
+    
+    """
     'Generates data for pytorch'
     __white_list_formats = {'flac'}
 
     def __init__(self, data_path, class_folders, slice_length, samplerate, trainingdata_amount, batch_size, channels, funct, hop_in_data, debug=False, rewrite_npy=False, allow_shuffle=True):
-        self.debug = debug
-        self.rewrite_npy = rewrite_npy
-        self.data_path = data_path
-        self.class_folders = class_folders
-        self.slice_length = slice_length
-        self.samplerate = samplerate
-        self.trainingdata_amount = trainingdata_amount
-        self.batch_size = batch_size
-        self.funct = funct
-        self.channels = channels
-        self.hop_in_data = hop_in_data
-        self.dim = self.get_current_dimension()
-        self.allow_shuffle = allow_shuffle
+        """
+            Parameters
+            -----------
+
+            data_path 
+                root path to data
+            class_folders
+                classes to use inside the root path. Classes have to be seperated by folders
+            slice_length:
+                length of slices for audiosamples in seconds
+            samplerate
+                samplerate of audofiles 
+            trainingdata_amount 
+                percentage of data that should be used as trainingdta 1 for 100% 
+            batch_size
+
+            channels: 
+                num of channels of outputdata 
+            funct:
+                function to transform output data, for example to transform the data to mel spectograms 
+            allow_shuffle (bool, optional):
+                is shuffeling allowed 
+            hop_in_data
+                windowsize of moving window
+            debug 
+                if true  debug output will be printed
+            rewrite_npya
+                if true the saved folder analysis from classes will be overwritten 
+        """
+        self._debug = debug
+        self._rewrite_npy = rewrite_npy
+        self._data_path = data_path
+        self._class_folders = class_folders
+        self._slice_length = slice_length
+        self._samplerate = samplerate
+        self._trainingdata_amount = trainingdata_amount
+        self._batch_size = batch_size
+        self._funct = funct
+        self._channels = channels
+        self._hop_in_data = hop_in_data
+        self._dim = self.get_current_dimension()
+        self._allow_shuffle = allow_shuffle
 
         if debug:
             logging.basicConfig(level=logging.DEBUG)
@@ -115,24 +192,28 @@ class CustomDataGenerator():
             logging.basicConfig(level=logging.WARN)
 
     def get_current_dimension(self):
-        y = np.zeros((self.batch_size, int(self.slice_length * self.samplerate)),dtype=np.float32)
-        ret = self.funct(y)
-        return np.shape(ret)
-    
-    def get_current_dimension_bak(self):
-        y = np.zeros(int(self.slice_length * self.samplerate))
-        ret = self.funct(y)
+        """
+        get shape of outputdata
+        """
+        y = np.zeros((self._batch_size, int(self._slice_length * self._samplerate)),dtype=np.float32)
+        ret = self._funct(y)
         return np.shape(ret)
 
     def get_generators(self):
-        classes = self._get_classes(self.class_folders, self.data_path)
-        data_train = self._get_data_dict(classes,self.data_path, self.rewrite_npy, self.samplerate, self.hop_in_data)
-        data_train, data_test = self.prepare_training_and_test_data(data_train, self.trainingdata_amount)
-        train_gen = BirdDataset(data_train, classes, self.batch_size, self.dim, self.samplerate, self.slice_length, self.channels, self.funct, self.allow_shuffle)
-        test_gen = BirdDataset(data_test, classes, self.batch_size, self.dim, self.samplerate, self.slice_length, self.channels, self.funct, self.allow_shuffle)
+        """
+        returns trainingdata generator and testdata generator
+        """
+        classes = self._get_classes(self._class_folders, self._data_path)
+        data_train = self._get_data_dict(classes,self._data_path, self._rewrite_npy, self._samplerate, self._hop_in_data)
+        data_train, data_test = self._prepare_training_and_test_data(data_train, self._trainingdata_amount)
+        train_gen = BirdDataset(data_train, classes, self._batch_size, self._dim, self._samplerate, self._slice_length, self._channels, self._funct, self._allow_shuffle)
+        test_gen = BirdDataset(data_test, classes, self._batch_size, self._dim, self._samplerate, self._slice_length, self._channels, self._funct, self._allow_shuffle)
         return train_gen, test_gen
 
     def _get_classes(self, class_folders:str, data_path:str):
+        """
+        returns list of training classes  
+        """
         class_list = []
         for class_folder in class_folders:
             folder_path = os.path.join(data_path, class_folder)
@@ -141,6 +222,9 @@ class CustomDataGenerator():
         return class_list
 
     def _get_data_dict(self, class_list:list, data_path:str, rewrite_npy:bool, samplerate:int, hop_in_data:int):
+        """
+        analyses trainingdata   
+        """
         data_dict = dict()
         for class_folder in class_list:
             folder_path = os.path.join(data_path, class_folder)
@@ -179,7 +263,7 @@ class CustomDataGenerator():
                 [ele.append(class_idx) for ele in data_dict[class_folder]]
         return data_dict
 
-    def prepare_training_and_test_data(self, data_dict, trainingdata_amount):
+    def _prepare_training_and_test_data(self, data_dict, trainingdata_amount):
         """ Prepares the trainings- and test- dataset
             trainingdata_amount: between 0 and 1.0; specifies the amount of trainingsdata in percentage
         """
